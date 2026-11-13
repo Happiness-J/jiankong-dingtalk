@@ -107,7 +107,7 @@ journalctl -u jiankong-dingtalk --no-pager -e
 - 依赖升级：gopsutil v3 → v4.26、caarlos0/env v9 → v11，go.mod 提升到 Go 1.26
 - 修复：钉钉返回 HTTP 200 但 errcode 非 0（被机器人拒绝）时旧版会误报推送成功，现在会正确报错
 - 健壮性：推送请求增加 10 秒超时；内存/磁盘/网络指标采集失败时不再 panic，缺失项显示为 -
-- 新增：单元测试（human / icon / signDing）、GitHub Actions 构建检查、.gitignore
+- 新增：单元测试（human / icon / signDing）、.gitignore
 - 程序启动日志打印版本号（构建时用 `-ldflags "-X main.version=v1.1.0"` 注入）
 
 ### v1.0.0 (2025-07-16)

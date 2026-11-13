@@ -18,13 +18,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/caarlos0/env/v9"
-	"github.com/shirou/gopsutil/v3/cpu"
-	"github.com/shirou/gopsutil/v3/disk"
-	"github.com/shirou/gopsutil/v3/host"
-	"github.com/shirou/gopsutil/v3/mem"
-	gonet "github.com/shirou/gopsutil/v3/net"
+	"github.com/caarlos0/env/v11"
+	"github.com/shirou/gopsutil/v4/cpu"
+	"github.com/shirou/gopsutil/v4/disk"
+	"github.com/shirou/gopsutil/v4/host"
+	"github.com/shirou/gopsutil/v4/mem"
+	gonet "github.com/shirou/gopsutil/v4/net"
 )
+
+/* ---------- 版本（构建时 -ldflags "-X main.version=vX.Y.Z" 注入） ---------- */
+var version = "dev"
 
 /* ---------- 配置 ---------- */
 type Config struct {
@@ -63,14 +66,23 @@ func sendDingMarkdown(webhook, secret, title, text string) error {
 		},
 	}
 	b, _ := json.Marshal(payload)
-	resp, err := http.Post(finalURL, "application/json", bytes.NewReader(b))
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(finalURL, "application/json", bytes.NewReader(b))
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("dingtalk %d: %s", resp.StatusCode, body)
+		return fmt.Errorf("dingtalk http %d: %s", resp.StatusCode, body)
+	}
+	// 钉钉返回 HTTP 200 不代表推送成功：机器人拒绝（关键词/签名/频率等）时 errcode 非 0
+	var ack struct {
+		ErrCode int    `json:"errcode"`
+		ErrMsg  string `json:"errmsg"`
+	}
+	if err := json.Unmarshal(body, &ack); err == nil && ack.ErrCode != 0 {
+		return fmt.Errorf("dingtalk errcode %d: %s", ack.ErrCode, ack.ErrMsg)
 	}
 	return nil
 }
@@ -174,10 +186,20 @@ func human(b uint64) string {
 /* ---------- 主流程 ---------- */
 func buildReport(cfg *Config) string {
 	v, _ := mem.VirtualMemory()
+	if v == nil {
+		v = &mem.VirtualMemoryStat{}
+	}
 	d, _ := disk.Usage("/")
+	if d == nil {
+		d = &disk.UsageStat{}
+	}
 	c, _ := cpu.Percent(time.Second, false)
 	n, _ := gonet.IOCounters(false)
 	h, _ := host.Info()
+	var uptimeSecs uint64
+	if h != nil {
+		uptimeSecs = h.Uptime
+	}
 
 	cpuPercent := 0.0
 	if len(c) > 0 {
@@ -197,20 +219,25 @@ func buildReport(cfg *Config) string {
 	sb.WriteString(fmt.Sprintf("- %s **CPU**: %.1f%%  \n", icon(cpuPercent, cfg.CPUAlert), cpuPercent))
 	sb.WriteString(fmt.Sprintf("- %s **内存**: %s / %s (%.1f%%)  \n",
 		icon(v.UsedPercent, cfg.MemAlert), human(v.Used), human(v.Total), v.UsedPercent))
-        sb.WriteString(fmt.Sprintf("- %s **磁盘**: %s / %s (%.1f%%)  \n",
-	        icon(d.UsedPercent, cfg.DiskAlert), human(d.Used), human(d.Total), d.UsedPercent))
-	sb.WriteString(fmt.Sprintf("- 📊 **网络**: ↓%.2f GB  ↑%.2f GB  \n",
-		float64(n[0].BytesRecv)/1024/1024/1024,
-		float64(n[0].BytesSent)/1024/1024/1024))
+	sb.WriteString(fmt.Sprintf("- %s **磁盘**: %s / %s (%.1f%%)  \n",
+		icon(d.UsedPercent, cfg.DiskAlert), human(d.Used), human(d.Total), d.UsedPercent))
+	if len(n) > 0 {
+		sb.WriteString(fmt.Sprintf("- 📊 **网络**: ↓%.2f GB  ↑%.2f GB  \n",
+			float64(n[0].BytesRecv)/1024/1024/1024,
+			float64(n[0].BytesSent)/1024/1024/1024))
+	} else {
+		sb.WriteString("- 📊 **网络**: -  \n")
+	}
 	sb.WriteString("\n---\n")
 	sb.WriteString(fmt.Sprintf("- 🖥️ **系统**: %s (%s)  \n", osVersion(), detectVirtualization()))
 	sb.WriteString(fmt.Sprintf("- ⏱️ **运行**: %s  \n",
-		(time.Duration(h.Uptime)*time.Second).Round(time.Second).String()))
+		(time.Duration(uptimeSecs) * time.Second).Round(time.Second).String()))
 	return sb.String()
 }
 
 func main() {
 	log.SetOutput(os.Stdout)
+	log.Printf("jiankong-dingtalk %s 启动", version)
 	cfg := loadConfig()
 	report := buildReport(cfg)
 	if err := sendDingMarkdown(cfg.DingWebhook, cfg.DingSecret, cfg.CustomTitle, report); err != nil {

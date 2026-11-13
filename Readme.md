@@ -1,3 +1,23 @@
+# jiankong-dingtalk
+
+把一台 Linux 服务器的状态做成日报，通过钉钉机器人推送到群里。单文件 Go 程序、无常驻进程，配合 systemd 定时器每天定时发送一次。
+
+推送内容：主机名、内网 IP、CPU / 内存 / 磁盘使用率（可设阈值，超限显示 ⚠️）、网络流量、系统版本与虚拟化类型、已运行时长。
+
+## 配置（环境变量）
+
+| 变量 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- |
+| `DING_WEBHOOK` | 是 | - | 钉钉机器人 Webhook 地址 |
+| `DING_SECRET` | 否 | - | 机器人加签密钥（SEC 开头） |
+| `CUSTOM_TITLE` | 否 | 服务器状态日报 | 推送标题 |
+| `CPU_THRESHOLD` | 否 | 80 | CPU 使用率告警阈值（%） |
+| `MEM_THRESHOLD` | 否 | 80 | 内存使用率告警阈值（%） |
+| `DISK_THRESHOLD` | 否 | 80 | 磁盘使用率告警阈值（%） |
+| `REPORT_TIME` | 否 | - | 计划推送时刻，仅在日报中展示，实际调度由 systemd 定时器决定 |
+
+## 使用
+
 ### 进项目根目录
 ```
 cd jiankong-dingtalk
@@ -80,3 +100,15 @@ journalctl -u jiankong-dingtalk --no-pager -e
 
 ## 效果图
 ![66a31723aa9be92737707015b54644e2.jpeg](https://i.mji.rip/2025/07/16/66a31723aa9be92737707015b54644e2.jpeg)
+
+## 更新记录
+
+### v1.1.0 (2026-11-13)
+- 依赖升级：gopsutil v3 → v4.26、caarlos0/env v9 → v11，go.mod 提升到 Go 1.26
+- 修复：钉钉返回 HTTP 200 但 errcode 非 0（被机器人拒绝）时旧版会误报推送成功，现在会正确报错
+- 健壮性：推送请求增加 10 秒超时；内存/磁盘/网络指标采集失败时不再 panic，缺失项显示为 -
+- 新增：单元测试（human / icon / signDing）、.gitignore
+- 程序启动日志打印版本号（构建时用 `-ldflags "-X main.version=v1.1.0"` 注入）
+
+### v1.0.0 (2025-07-16)
+- 首个版本：服务器状态日报推送到钉钉（CPU / 内存 / 磁盘 / 网络 / 主机信息）

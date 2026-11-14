@@ -238,6 +238,10 @@ func buildReport(cfg *Config) string {
 func main() {
 	log.SetOutput(os.Stdout)
 	log.Printf("jiankong-dingtalk %s 启动", version)
+	if len(os.Args) > 1 && os.Args[1] == "metrics" {
+		serveMetrics()
+		return
+	}
 	cfg := loadConfig()
 	report := buildReport(cfg)
 	if err := sendDingMarkdown(cfg.DingWebhook, cfg.DingSecret, cfg.CustomTitle, report); err != nil {
